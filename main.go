@@ -14,16 +14,25 @@ var (
 	errChan = make(chan error, 10)
 )
 
-func main() {
-	// print basic info
-	log.Println("consulat mode ", os.Getenv("CONSULAT_MODE"))
-	log.Println("consulat auth method ", os.Getenv("CONSUL_AUTH_METHOD"))
+func GetEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
+}
 
+func main() {
+	var jwtKey = GetEnv("KUBERNETES_JWT_SECRET", "/run/secrets/kubernetes.io/serviceaccount/token")
+	var consulMode = GetEnv("CONSULAT_MODE", "sidecar")
+	var consulAuthMethod = GetEnv("CONSULAT_AUTH_METHOD", "kubernetes-consul-jwt")
+	var consulTokenFile = GetEnv("CONSULAT_TOKEN_FILE", "/run/secrets/consul/token")
+
+	// print basic info
+	log.Println("consulat mode ", consulMode)
+	log.Println("consulat auth method ", consulAuthMethod)
 	log.Println("initialize consulat")
-	consulat, err := consulat.New(
-		os.Getenv("CONSUL_AUTH_METHOD"),
-		os.Getenv("KUBERNETES_JWT_SECRET"),
-		os.Getenv("CONSUL_TOKEN_FILE"))
+
+	consulat, err := consulat.New(consulAuthMethod, jwtKey, consulTokenFile)
 	if err != nil {
 		panic(err)
 	}
@@ -33,13 +42,13 @@ func main() {
 	}
 
 	// stop process if mode is not sidecar
-	if os.Getenv("CONSULAT_MODE") != "sidecar" {
-		log.Println("token successfull retrieve")
+	if consulMode != "sidecar" {
+		log.Println("consulat mode is init container, shutting down ...")
 		os.Exit(0)
 	}
 
 	if consulat.ACLToken.ExpirationTime == nil {
-		log.Println("expired is not set, stoping")
+		log.Println("token don't have expired, shutting down ...")
 		os.Exit(0)
 	}
 
@@ -62,7 +71,7 @@ func main() {
 			log.Println("logging out consul and removing existing consul token")
 			consulat.Logout()
 
-			log.Println("successfull terminated consulat")
+			log.Println("shutting down ...")
 			os.Exit(0)
 		}
 	}
